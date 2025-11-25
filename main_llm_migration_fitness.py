@@ -14,10 +14,29 @@ from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
 from openai import OpenAI
+import json
+import re
 
-os.environ['OPENAI_API_KEY'] = "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"
+os.environ['OPENAI_API_KEY'] = "placeholder"
 os.environ['OPENAI_BASE_URL'] = "https://api.openai.com/v1/"
 client = OpenAI()
+
+
+def parse_migration_plan(llm_reply: str):
+    text = llm_reply.strip()
+
+    # Strip code fences like ```json ... ```
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
+            text = "\n".join(lines[1:-1]).strip()
+
+    # Extract first JSON object if there's any extra text
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        text = match.group(0).strip()
+
+    return json.loads(text)
 
 
 if __name__ == "__main__":
@@ -171,30 +190,18 @@ if __name__ == "__main__":
 
             return islands
 
-        # ===========================================================
-        #          LLM-guided migration WITH fitness info, no fixed objective
-        # ===========================================================
         def migrate_robots(islands):
-            """
-            LLM-based migration:
-            - Receives structure + fitness for each robot in each island.
-            - Not told to maximize diversity or any specific metric.
-            - Free to discover its own implicit migration objective.
-            """
             print("[LLM] Deciding robot migrations via LLM...")
 
-            # Build summary with structure + fitness
             summary = {}
             for island_id, island in enumerate(islands):
                 summary[island_id] = []
                 for robot in island:
-                    # ASSUMPTION: each robot has .body and .fitness attributes after PPO training.
                     summary[island_id].append({
                         "body": robot.body.tolist(),
                         "fitness": float(robot.fitness)
                     })
 
-            # Build LLM prompt
             user_prompt = (
                 "You manage the evolution of soft robots across several islands. "
                 "Each island contains robots represented by 5x5 voxel grids, and each robot has a fitness score. \n"
@@ -233,16 +240,15 @@ if __name__ == "__main__":
                         {"role": "user", "content": user_prompt}
                     ],
                     max_tokens=1000,
-                    temperature=0.7
+                    temperature=0.7,
+                    response_format={"type": "json_object"},
                 )
 
                 llm_reply = response.choices[0].message.content.strip()
                 print("LLM Migration Decision:\n", llm_reply)
 
-                import json
-                migration_plan = json.loads(llm_reply)
+                migration_plan = parse_migration_plan(llm_reply)
 
-                # Build new islands
                 new_islands = [[] for _ in range(len(islands))]
                 migrating = {i: set() for i in range(len(islands))}
 
@@ -264,7 +270,6 @@ if __name__ == "__main__":
                             migrating[from_island_int].add(idx)
                             new_islands[to_island].append(islands[from_island_int][idx])
 
-                # Add all non-migrating robots back to their original islands
                 for island_id, island in enumerate(islands):
                     for idx, robot in enumerate(island):
                         if idx not in migrating[island_id]:
@@ -276,9 +281,6 @@ if __name__ == "__main__":
                 print(f"[ERROR] LLM migration failed. Falling back to random migration. Error: {e}")
                 return migrate_robots_fallback(islands)
 
-        # ===========================================================
-        # Fallback migration (keeps a rough 20% migration rate)
-        # ===========================================================
         def migrate_robots_fallback(islands, migration_rate=0.2):
             print("[FALLBACK] Random migration")
             new_islands = [[] for _ in range(len(islands))]
@@ -298,15 +300,11 @@ if __name__ == "__main__":
 
             return new_islands
 
-        # ===========================================================
-        # Main evolutionary setup
-        # ===========================================================
-        num_islands = 4
-        max_generations = 50
-        total_population = 90
+        num_islands = 3
+        max_generations = 4
+        total_population = 30
         generations_done = [0] * num_islands
 
-        # Create initial population and assign to islands
         population_structure_hashes = {}
         structures = []
         while len(structures) < total_population:
@@ -321,7 +319,6 @@ if __name__ == "__main__":
 
         islands = assign_islands_by_voxel_value(structures, num_islands=num_islands)
 
-        # Logging helper
         def log_voxel_medians(island_id, generation_id, population):
             os.makedirs("logs", exist_ok=True)
             log_file = f"logs/island{island_id}_gen{generation_id}.txt"
@@ -332,9 +329,6 @@ if __name__ == "__main__":
                     f.write(f"Robot {i}: median voxel value = {median}\n")
             print(f"[LOGGED] voxel medians for Island {island_id} Gen {generation_id}")
 
-        # ===========================================================
-        # Synchronized generation loop with periodic migration
-        # ===========================================================
         while max(generations_done) < max_generations:
             for island_id in range(num_islands):
                 if generations_done[island_id] >= max_generations:
@@ -345,8 +339,8 @@ if __name__ == "__main__":
                     pop_size=len(islands[island_id]),
                     structure_shape=(5, 5),
                     experiment_name=task + f"-Island{island_id}-Gen{generations_done[island_id]}",
-                    max_evaluations=1000,
-                    train_iters=1000,
+                    max_evaluations=50,
+                    train_iters=100,
                     num_cores=4,
                     env_name=task,
                     args=args,
@@ -358,7 +352,6 @@ if __name__ == "__main__":
                 log_voxel_medians(island_id, generations_done[island_id], evolved_population)
                 generations_done[island_id] += 1
 
-            # Trigger migration when all islands have completed the same generation
             if all(g % 2 == 0 for g in generations_done) and len(set(generations_done)) == 1:
                 print(f">> Migration triggered at generation {generations_done[0]}")
                 islands = migrate_robots(islands)
