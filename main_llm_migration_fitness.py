@@ -172,7 +172,7 @@ if __name__ == "__main__":
             return islands
 
         # ===========================================================
-        # UPDATED: LLM-guided migration WITH fitness info, no fixed objective
+        #          LLM-guided migration WITH fitness info, no fixed objective
         # ===========================================================
         def migrate_robots(islands):
             """
