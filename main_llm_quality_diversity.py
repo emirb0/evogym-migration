@@ -193,7 +193,7 @@ def mutate_body(parent_body: np.ndarray, mutation_rate: float = 0.1, max_retries
 
 
 # ===========================================================
-# Evaluate population via your existing PPO pipeline
+# Evaluate population via PPO pipeline
 # ===========================================================
 def evaluate_population(bodies, env_name: str, args, experiment_prefix: str, num_cores: int = 4):
     """
