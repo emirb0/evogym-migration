@@ -14,7 +14,7 @@ from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
 from openai import OpenAI
-os.environ['OPENAI_API_KEY'] = "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"
+os.environ['OPENAI_API_KEY'] = "placeholder"
 os.environ['OPENAI_BASE_URL'] = "https://api.openai.com/v1/"
 client = OpenAI()
 
